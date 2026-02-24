@@ -24,7 +24,13 @@ class DotaHubBot(commands.Bot):
     
         guild = discord.Object(id=GUILD_ID)
     
+        # Remove comandos antigos do guild
         self.tree.clear_commands(guild=guild)
+    
+        # Re-adiciona comandos do arquivo
+        self.tree.copy_global_to(guild=guild)
+    
+        # Sincroniza novamente
         await self.tree.sync(guild=guild)
     
         print("Slash commands sincronizados.")
@@ -182,6 +188,7 @@ async def perfil(interaction: discord.Interaction):
 
 
 bot.run(TOKEN)
+
 
 
 
