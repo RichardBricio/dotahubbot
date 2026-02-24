@@ -62,6 +62,14 @@ async def fila(interaction: discord.Interaction):
         view=FilaView()
     )
 
-bot.run(TOKEN)
+##bot.run(TOKEN)
+
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print("Bot online.")
+
+bot.run(os.getenv("TOKEN"))
+
 
 
