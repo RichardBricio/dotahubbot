@@ -9,9 +9,26 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 GUILD_ID = int(os.getenv("GUILD_ID"))
 
 intents = discord.Intents.default()
-bot = commands.Bot(command_prefix="!", intents=intents)
-
 pool = None
+
+
+# =========================
+# BOT CLASS
+# =========================
+class DotaHubBot(commands.Bot):
+
+    async def setup_hook(self):
+        global pool
+        pool = await asyncpg.create_pool(DATABASE_URL)
+        await create_tables()
+
+        guild = discord.Object(id=GUILD_ID)
+        await self.tree.sync(guild=guild)
+
+        print("Banco conectado e slash sincronizado.")
+
+
+bot = DotaHubBot(command_prefix="!", intents=intents)
 
 
 # =========================
@@ -95,7 +112,6 @@ class FilaView(discord.ui.View):
 # =========================
 # SLASH COMMANDS
 # =========================
-
 @bot.tree.command(name="fila", description="Abrir painel da fila")
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 async def fila(interaction: discord.Interaction):
@@ -163,22 +179,6 @@ async def perfil(interaction: discord.Interaction):
     embed.add_field(name="Winrate", value=f"{winrate}%")
 
     await interaction.response.send_message(embed=embed)
-
-
-# =========================
-# READY EVENT
-# =========================
-@bot.event
-async def on_ready():
-    global pool
-    pool = await asyncpg.create_pool(DATABASE_URL)
-
-    await create_tables()
-
-    guild = discord.Object(id=GUILD_ID)
-    await bot.tree.sync(guild=guild)
-
-    print(f"DotaHub online como {bot.user}")
 
 
 bot.run(TOKEN)
