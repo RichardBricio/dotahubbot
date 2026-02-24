@@ -1,18 +1,20 @@
 import discord
 from discord.ext import commands
-from discord import app_commands
-from config import TOKEN, GUILD_ID
-from views import QueueView
-from medals import get_medal
-import database
-from discord import ui
+from discord import app_commands, ui
 import psycopg2
+import os
+import database
+from config import GUILD_ID
+from medals import get_medal
 
 database.setup()
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
+# =========================================
+# MODAL DE CADASTRO
+# =========================================
 class CadastroModal(ui.Modal, title="Cadastro DotaHub"):
 
     dota_nick = ui.TextInput(
@@ -28,7 +30,8 @@ class CadastroModal(ui.Modal, title="Cadastro DotaHub"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-        conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+
+        conn = psycopg2.connect(os.getenv("DATABASE_URL"), sslmode="require")
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -45,16 +48,19 @@ class CadastroModal(ui.Modal, title="Cadastro DotaHub"):
         conn.close()
 
         await interaction.response.send_message(
-            "Cadastro realizado com sucesso! Agora você já pode entrar na fila.",
+            "Cadastro realizado com sucesso! Agora entre novamente na fila.",
             ephemeral=True
         )
 
+# =========================================
+# VIEW DA FILA
+# =========================================
 class FilaView(discord.ui.View):
 
     @discord.ui.button(label="Entrar na Fila", style=discord.ButtonStyle.green)
     async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
 
-        conn = psycopg2.connect(os.getenv("DATABASE_URL"))
+        conn = psycopg2.connect(os.getenv("DATABASE_URL"), sslmode="require")
         cursor = conn.cursor()
 
         cursor.execute(
@@ -66,74 +72,81 @@ class FilaView(discord.ui.View):
         conn.close()
 
         if player is None:
-            # Primeira vez → abre cadastro
             await interaction.response.send_modal(CadastroModal())
             return
 
-        # Já cadastrado → entra na fila
         await interaction.response.send_message(
             "Você entrou na fila!",
             ephemeral=True
         )
 
-@bot.event
-async def on_ready():
-    await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
-    print(f"DotaHub online como {bot.user}")
-
-@bot.tree.command(name="fila", description="Entrar na fila ranqueada")
+# =========================================
+# COMANDO /fila
+# =========================================
+@bot.tree.command(name="fila", description="Abrir fila ranqueada")
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 async def fila(interaction: discord.Interaction):
+
     embed = discord.Embed(
         title="DotaHub Ranked Queue",
-        description="Clique no botão para entrar na fila.",
+        description="Clique para entrar na fila.",
         color=discord.Color.red()
     )
-    await interaction.response.send_message(embed=embed, view=QueueView())
 
+    await interaction.response.send_message(embed=embed, view=FilaView())
+
+# =========================================
+# COMANDO /ranking
+# =========================================
 @bot.tree.command(name="ranking", description="Ver ranking")
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 async def ranking(interaction: discord.Interaction):
+
     top = database.top10()
+
+    if not top:
+        await interaction.response.send_message("Ranking vazio ainda.")
+        return
+
     msg = ""
     for i, p in enumerate(top):
         user = await bot.fetch_user(p[0])
         msg += f"{i+1}. {user.name} - {p[1]} MMR ({p[2]}W/{p[3]}L)\n"
+
     await interaction.response.send_message(msg)
 
+# =========================================
+# COMANDO /perfil
+# =========================================
 @bot.tree.command(name="perfil", description="Ver seu perfil")
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 async def perfil(interaction: discord.Interaction):
+
     player = database.get_player(interaction.user.id)
+
     if not player:
-        await interaction.response.send_message("Você ainda não jogou.")
+        await interaction.response.send_message("Você ainda não está cadastrado.")
         return
 
     medal = get_medal(player[0])
-    winrate = round(player[1] / (player[1] + player[2]) * 100, 1) if (player[1]+player[2])>0 else 0
+    total = player[1] + player[2]
+    winrate = round((player[1] / total) * 100, 1) if total > 0 else 0
 
     embed = discord.Embed(title=f"Perfil de {interaction.user.name}")
     embed.add_field(name="MMR", value=player[0])
     embed.add_field(name="Medalha", value=medal)
+    embed.add_field(name="Vitórias", value=player[1])
+    embed.add_field(name="Derrotas", value=player[2])
     embed.add_field(name="Winrate", value=f"{winrate}%")
+
     await interaction.response.send_message(embed=embed)
 
-@bot.tree.command(name="fila", description="Abrir painel da fila")
-async def fila(interaction: discord.Interaction):
-    await interaction.response.send_message(
-        "Clique para entrar na fila:",
-        view=FilaView()
-    )
-
-##bot.run(TOKEN)
-
+# =========================================
+# READY
+# =========================================
 @bot.event
 async def on_ready():
-    await bot.tree.sync()
-    print("Bot online.")
+    await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
+    print("DotaHub online.")
 
 bot.run(os.getenv("TOKEN"))
-
-
-
-
