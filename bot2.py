@@ -20,10 +20,7 @@ class DotaHubBot(commands.Bot):
     async def setup_hook(self):
         global pool
     
-        pool = await asyncpg.create_pool(
-            DATABASE_URL,
-            ssl="require"
-        )
+        pool = await asyncpg.create_pool(DATABASE_URL)
     
         await create_tables()
     
@@ -186,6 +183,7 @@ async def perfil(interaction: discord.Interaction):
 
 
 bot.run(TOKEN)
+
 
 
 
