@@ -18,18 +18,18 @@ pool = None
 class DotaHubBot(commands.Bot):
 
     async def setup_hook(self):
-    global pool
-    pool = await asyncpg.create_pool(DATABASE_URL)
+        global pool
+        pool = await asyncpg.create_pool(DATABASE_URL)
 
-    await create_tables()
+        await create_tables()
 
-    # Limpa todos comandos globais
-    self.tree.clear_commands(guild=None)
+        # limpa comandos globais
+        self.tree.clear_commands(guild=None)
 
-    # Sincroniza global
-    await self.tree.sync()
+        # sincroniza global
+        await self.tree.sync()
 
-    print("Comandos globais sincronizados.")
+        print("Comandos globais sincronizados.")
 
 bot = DotaHubBot(command_prefix="!", intents=intents)
 
@@ -184,6 +184,7 @@ async def perfil(interaction: discord.Interaction):
 
 
 bot.run(TOKEN)
+
 
 
 
