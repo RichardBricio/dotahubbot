@@ -1,6 +1,7 @@
 import os
-
 TOKEN = os.getenv("TOKEN")
+
 GUILD_ID = 254277411313549313
 K_FACTOR = 32
 INITIAL_MMR = 1000
+
