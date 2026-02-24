@@ -13,7 +13,10 @@ def setup():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS players (
             user_id BIGINT PRIMARY KEY,
-            mmr INTEGER DEFAULT 1000,
+            discord_name TEXT,
+            dota_nick TEXT,
+            medal TEXT,
+            mmr INTEGER DEFAULT 2000,
             wins INTEGER DEFAULT 0,
             losses INTEGER DEFAULT 0
         );
@@ -83,3 +86,4 @@ def get_ranking():
     conn.close()
 
     return data
+
