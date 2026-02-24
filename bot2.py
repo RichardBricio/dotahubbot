@@ -55,5 +55,13 @@ async def perfil(interaction: discord.Interaction):
     embed.add_field(name="Winrate", value=f"{winrate}%")
     await interaction.response.send_message(embed=embed)
 
+@bot.tree.command(name="fila", description="Abrir painel da fila")
+async def fila(interaction: discord.Interaction):
+    await interaction.response.send_message(
+        "Clique para entrar na fila:",
+        view=FilaView()
+    )
+
 bot.run(TOKEN)
+
 
