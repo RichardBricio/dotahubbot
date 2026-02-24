@@ -30,27 +30,34 @@ class CadastroModal(ui.Modal, title="Cadastro DotaHub"):
     )
 
     async def on_submit(self, interaction: discord.Interaction):
-
-        conn = psycopg2.connect(os.getenv("DATABASE_URL"), sslmode="require")
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            INSERT INTO players (user_id, discord_name, dota_nick, medal)
-            VALUES (%s, %s, %s, %s)
-        """, (
-            interaction.user.id,
-            interaction.user.name,
-            self.dota_nick.value,
-            self.medal.value
-        ))
-
-        conn.commit()
-        conn.close()
-
-        await interaction.response.send_message(
-            "Cadastro realizado com sucesso! Agora entre novamente na fila.",
-            ephemeral=True
-        )
+        try:
+            conn = psycopg2.connect(os.getenv("DATABASE_URL"), sslmode="require")
+            cursor = conn.cursor()
+    
+            cursor.execute("""
+                INSERT INTO players (user_id, discord_name, dota_nick, medal)
+                VALUES (%s, %s, %s, %s)
+            """, (
+                interaction.user.id,
+                interaction.user.name,
+                self.dota_nick.value,
+                self.medal.value
+            ))
+    
+            conn.commit()
+            conn.close()
+    
+            await interaction.response.send_message(
+                "Cadastro realizado com sucesso!",
+                ephemeral=True
+            )
+    
+        except Exception as e:
+            print("ERRO NO CADASTRO:", e)
+            await interaction.response.send_message(
+                f"Erro interno: {e}",
+                ephemeral=True
+            )
 
 # =========================================
 # VIEW DA FILA
