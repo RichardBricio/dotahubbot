@@ -19,17 +19,21 @@ class DotaHubBot(commands.Bot):
 
     async def setup_hook(self):
         global pool
-        pool = await asyncpg.create_pool(DATABASE_URL)
+    
+        pool = await asyncpg.create_pool(
+            DATABASE_URL,
+            ssl="require"
+        )
+    
         await create_tables()
-
+    
         guild = discord.Object(id=GUILD_ID)
+        self.tree.clear_commands(guild=guild)
         await self.tree.sync(guild=guild)
-
+    
         print("Banco conectado e slash sincronizado.")
 
-
 bot = DotaHubBot(command_prefix="!", intents=intents)
-
 
 # =========================
 # DATABASE SETUP
@@ -182,3 +186,4 @@ async def perfil(interaction: discord.Interaction):
 
 
 bot.run(TOKEN)
+
