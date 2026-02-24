@@ -2,9 +2,11 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from config import TOKEN, GUILD_ID
-import database
 from views import QueueView
 from medals import get_medal
+import database
+
+database.setup()
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="!", intents=intents)
@@ -54,3 +56,4 @@ async def perfil(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 bot.run(TOKEN)
+
