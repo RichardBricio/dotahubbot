@@ -18,27 +18,17 @@ pool = None
 class DotaHubBot(commands.Bot):
 
     async def setup_hook(self):
-    global pool
-    pool = await asyncpg.create_pool(DATABASE_URL)
-    await create_tables()
+        global pool
+        pool = await asyncpg.create_pool(DATABASE_URL)
 
-    guild = discord.Object(id=GUILD_ID)
+        await create_tables()
 
-    # Apaga TODOS os comandos do servidor
-    self.tree.clear_commands(guild=None)
-    await self.tree.sync()
+        guild = discord.Object(id=GUILD_ID)
 
-    # Limpa especificamente do guild também
-    self.tree.clear_commands(guild=guild)
-    await self.tree.sync(guild=guild)
+        self.tree.clear_commands(guild=guild)
+        await self.tree.sync(guild=guild)
 
-    print("Comandos antigos apagados.")
-
-    # Agora registra novamente
-    self.tree.copy_global_to(guild=guild)
-    await self.tree.sync(guild=guild)
-
-    print("Slash commands sincronizados corretamente.")
+        print("Slash commands sincronizados.")
 
 bot = DotaHubBot(command_prefix="!", intents=intents)
 
@@ -193,6 +183,7 @@ async def perfil(interaction: discord.Interaction):
 
 
 bot.run(TOKEN)
+
 
 
 
