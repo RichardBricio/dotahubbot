@@ -98,8 +98,6 @@ class CadastroModal(discord.ui.Modal, title="Cadastro DotaHub"):
 # =========================
 class MedalSelect(discord.ui.Select):
 
-    class MedalSelect(discord.ui.Select):
-
     def __init__(self, dota_nick):
 
         self.dota_nick = dota_nick
@@ -276,6 +274,7 @@ async def perfil(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
 
 
