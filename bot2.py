@@ -158,17 +158,82 @@ class FilaView(discord.ui.View):
     @discord.ui.button(label="Entrar na Fila", style=discord.ButtonStyle.green)
     async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
 
+        global queue_message, queue_task, queue_started_at
+
         async with pool.acquire() as conn:
+
+            # Verifica se está cadastrado
             player = await conn.fetchrow(
-                "SELECT * FROM players WHERE user_id=$1",
+                "SELECT * FROM players WHERE user_id = $1",
                 interaction.user.id
             )
 
-        if not player:
-            await interaction.response.send_modal(CadastroModal())
-            return
+            if player is None:
+                await interaction.response.send_modal(CadastroModal())
+                return
 
-        await add_player_to_queue(interaction)
+            # Tenta inserir na fila
+            try:
+                await conn.execute("""
+                    INSERT INTO queue (user_id)
+                    VALUES ($1)
+                """, interaction.user.id)
+            except asyncpg.UniqueViolationError:
+                await interaction.response.send_message(
+                    "Você já está na fila.",
+                    ephemeral=True
+                )
+                return
+
+            # Busca todos da fila
+            rows = await conn.fetch("""
+                SELECT p.discord_name
+                FROM queue q
+                JOIN players p ON p.user_id = q.user_id
+                ORDER BY q.joined_at
+            """)
+
+        count = len(rows)
+
+        # Se for o primeiro jogador, inicia contador
+        if count == 1:
+            queue_started_at = discord.utils.utcnow()
+            queue_task = bot.loop.create_task(
+                queue_timeout_task(interaction.channel)
+            )
+
+        # Monta lista de jogadores
+        nick_list = "\n".join(f"• {r['discord_name']}" for r in rows)
+
+        content = (
+            f"🔥 Fila rolando: {count}/{QUEUE_SIZE}\n"
+            f"⏳ Tempo restante: 5:00\n\n"
+            f"👥 Jogadores na fila:\n{nick_list}"
+        )
+
+        # Cria ou atualiza mensagem principal
+        if queue_message is None:
+            queue_message = await interaction.channel.send(content)
+        else:
+            await queue_message.edit(content=content)
+
+        await interaction.response.send_message(
+            "Você entrou na fila.",
+            ephemeral=True
+        )
+
+        # Se atingiu o limite
+        if count >= QUEUE_SIZE:
+
+            if queue_task:
+                queue_task.cancel()
+
+            if queue_message:
+                await queue_message.edit(
+                    content="✅ Quantidade de players atingida! Equipes sendo calibradas..."
+                )
+
+            await start_match(interaction.channel)
 
 async def add_player_to_queue(interaction):
 
@@ -229,7 +294,12 @@ async def queue_timeout_task(channel):
         while True:
 
             async with pool.acquire() as conn:
-                count = await conn.fetchval("SELECT COUNT(*) FROM queue")
+                rows = await conn.fetch("""
+                    SELECT p.discord_name
+                    FROM queue q
+                    JOIN players p ON p.user_id = q.user_id
+                """)
+                count = len(rows)
 
             if count >= QUEUE_SIZE:
                 return
@@ -243,7 +313,7 @@ async def queue_timeout_task(channel):
 
                 if queue_message:
                     await queue_message.edit(
-                        content="❌ Fila cancelada. Tempo esgotado."
+                        content="⏰ Tempo expirado! Fila encerrada por falta de jogadores."
                     )
 
                 queue_message = None
@@ -252,7 +322,13 @@ async def queue_timeout_task(channel):
             minutes = time_left // 60
             seconds = time_left % 60
 
-            content = f"🔥 Fila rolando: {count}/{QUEUE_SIZE}\n⏳ Tempo restante: {minutes}:{seconds:02d}"
+            nick_list = "\n".join(f"• {r['discord_name']}" for r in rows) if rows else "Ninguém ainda..."
+
+            content = (
+                f"🔥 Fila rolando: {count}/{QUEUE_SIZE}\n"
+                f"⏳ Tempo restante: {minutes}:{seconds:02d}\n\n"
+                f"👥 Jogadores na fila:\n{nick_list}"
+            )
 
             if queue_message:
                 await queue_message.edit(content=content)
@@ -279,12 +355,16 @@ async def start_match(channel):
 
         await conn.execute("DELETE FROM queue")
 
+    if not rows:
+        await channel.send("Erro ao montar partida. Nenhum jogador encontrado.")
+        return
+
     players = list(rows)
 
     team_a = []
     team_b = []
 
-    # Snake Draft real (1-2-2-2-2-1)
+    # Snake Draft balanceado
     for i, player in enumerate(players):
         if (i // 2) % 2 == 0:
             team_a.append(player)
@@ -293,12 +373,11 @@ async def start_match(channel):
 
     avg_a = sum(p["mmr"] for p in team_a) // len(team_a)
     avg_b = sum(p["mmr"] for p in team_b) // len(team_b)
-
     diff = abs(avg_a - avg_b)
 
     embed = discord.Embed(
         title="🔥 PARTIDA FORMADA 🔥",
-        description="Balanceamento por MMR (Snake Draft).",
+        description="Balanceamento automático por MMR (Snake Draft).",
         color=discord.Color.green()
     )
 
@@ -315,7 +394,7 @@ async def start_match(channel):
     )
 
     embed.add_field(
-        name="📊 Diferença de Média",
+        name="📊 Diferença de média",
         value=f"{diff} MMR",
         inline=False
     )
@@ -346,5 +425,6 @@ async def fila(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
 
