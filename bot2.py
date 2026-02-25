@@ -10,6 +10,9 @@ GUILD_ID = int(os.getenv("GUILD_ID"))
 
 intents = discord.Intents.default()
 pool = None
+queue_message = None
+queue_task = None
+queue_started_at = None
 
 # =========================
 # MMR BASE POR MEDALHA
@@ -24,6 +27,10 @@ MEDAL_MMR = {
     "Divine": 4620,
     "Immortal": 5630
 }
+
+QUEUE_SIZE = 2  
+#QUEUE_SIZE = 10  
+QUEUE_TIMEOUT = 300  # 5 minutos em segundos
 
 # =========================
 # BOT CLASS
@@ -150,6 +157,15 @@ class MedalSelect(discord.ui.Select):
             f"Cadastro concluído como **{medal}** ({mmr} MMR).",
             ephemeral=True
         )
+        
+        await interaction.followup.send(
+            "Você foi automaticamente incluído na fila.",
+            ephemeral=True
+        )
+
+# força clique automático
+view = FilaView()
+await view.entrar(interaction, None)
 
 class MedalSelectView(discord.ui.View):
     def __init__(self, dota_nick):
@@ -164,9 +180,11 @@ class FilaView(discord.ui.View):
     @discord.ui.button(label="Entrar na Fila", style=discord.ButtonStyle.green)
     async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
     
+        global queue_message, queue_task, queue_started_at
+    
         async with pool.acquire() as conn:
     
-            # verifica se está cadastrado
+            # verifica cadastro
             player = await conn.fetchrow(
                 "SELECT * FROM players WHERE user_id = $1",
                 interaction.user.id
@@ -176,7 +194,7 @@ class FilaView(discord.ui.View):
                 await interaction.response.send_modal(CadastroModal())
                 return
     
-            # tenta inserir na fila
+            # tenta inserir
             try:
                 await conn.execute("""
                     INSERT INTO queue (user_id)
@@ -189,60 +207,33 @@ class FilaView(discord.ui.View):
                 )
                 return
     
-            # conta quantos tem na fila
             count = await conn.fetchval("SELECT COUNT(*) FROM queue")
     
-            if count < 10:
-                await interaction.response.send_message(
-                    f"Você entrou na fila. ({count}/10)",
-                    ephemeral=True
-                )
-                return
+        # inicia fila se for o primeiro
+        if count == 1:
+            queue_started_at = discord.utils.utcnow()
+            queue_task = bot.loop.create_task(queue_timeout_task(interaction.channel))
     
-            # se chegou aqui = 10 players
-            rows = await conn.fetch("""
-                SELECT p.user_id, p.discord_name, p.mmr
-                FROM queue q
-                JOIN players p ON p.user_id = q.user_id
-                ORDER BY p.mmr DESC
-            """)
+        remaining = QUEUE_SIZE - count
+        elapsed = (discord.utils.utcnow() - queue_started_at).total_seconds()
+        time_left = max(0, QUEUE_TIMEOUT - int(elapsed))
     
-            players = list(rows)
+        minutes = time_left // 60
+        seconds = time_left % 60
     
-            # BALANCEAMENTO SNAKE DRAFT
-            team_a = []
-            team_b = []
+        content = f"🔥 Fila rolando: {count}/{QUEUE_SIZE}\n⏳ Tempo restante: {minutes}:{seconds:02d}"
     
-            for i, player in enumerate(players):
-                if i % 4 in (0, 3):
-                    team_a.append(player)
-                else:
-                    team_b.append(player)
+        if queue_message is None:
+            queue_message = await interaction.channel.send(content)
+        else:
+            await queue_message.edit(content=content)
     
-            avg_a = sum(p["mmr"] for p in team_a) // 5
-            avg_b = sum(p["mmr"] for p in team_b) // 5
+        await interaction.response.send_message("Você entrou na fila.", ephemeral=True)
     
-            # limpa fila
-            await conn.execute("DELETE FROM queue")
-    
-        embed = discord.Embed(
-            title="🔥 PARTIDA FORMADA 🔥",
-            color=discord.Color.green()
-        )
-    
-        embed.add_field(
-            name=f"Radiant (Média {avg_a})",
-            value="\n".join(f"{p['discord_name']} ({p['mmr']})" for p in team_a),
-            inline=False
-        )
-    
-        embed.add_field(
-            name=f"Dire (Média {avg_b})",
-            value="\n".join(f"{p['discord_name']} ({p['mmr']})" for p in team_b),
-            inline=False
-        )
-    
-        await interaction.response.send_message(embed=embed)
+        if count >= QUEUE_SIZE:
+            if queue_task:
+                queue_task.cancel()
+            await start_match(interaction.channel)
 
 # =========================
 # SLASH COMMANDS
@@ -317,10 +308,85 @@ async def perfil(interaction: discord.Interaction):
 
     await interaction.response.send_message(embed=embed)
 
+async def queue_timeout_task(channel):
+    global queue_message
+
+    try:
+        await discord.utils.sleep_until(
+            discord.utils.utcnow() + discord.utils.timedelta(seconds=QUEUE_TIMEOUT)
+        )
+    except:
+        return
+
+    async with pool.acquire() as conn:
+        count = await conn.fetchval("SELECT COUNT(*) FROM queue")
+
+        if count < QUEUE_SIZE:
+            await conn.execute("DELETE FROM queue")
+
+            if queue_message:
+                await queue_message.edit(
+                    content="❌ Fila cancelada. Tempo esgotado."
+                )
+
+            queue_message = None
+
+async def start_match(channel):
+    global queue_message
+
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT p.user_id, p.discord_name, p.mmr
+            FROM queue q
+            JOIN players p ON p.user_id = q.user_id
+            ORDER BY p.mmr DESC
+        """)
+
+        await conn.execute("DELETE FROM queue")
+
+    players = list(rows)
+
+    team_a = []
+    team_b = []
+
+    for i, player in enumerate(players):
+        if i % 4 in (0, 3):
+            team_a.append(player)
+        else:
+            team_b.append(player)
+
+    avg_a = sum(p["mmr"] for p in team_a) // len(team_a)
+    avg_b = sum(p["mmr"] for p in team_b) // len(team_b)
+
+    embed = discord.Embed(
+        title="🔥 PARTIDA FORMADA 🔥",
+        color=discord.Color.green()
+    )
+
+    embed.add_field(
+        name=f"Radiant (Média {avg_a})",
+        value="\n".join(f"{p['discord_name']} ({p['mmr']})" for p in team_a),
+        inline=False
+    )
+
+    embed.add_field(
+        name=f"Dire (Média {avg_b})",
+        value="\n".join(f"{p['discord_name']} ({p['mmr']})" for p in team_b),
+        inline=False
+    )
+
+    await channel.send(embed=embed)
+
+    if queue_message:
+        await queue_message.delete()
+
+    queue_message = None
+
 # =========================
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
 
 
