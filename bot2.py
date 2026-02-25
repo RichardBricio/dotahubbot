@@ -41,6 +41,9 @@ class DotaHubBot(commands.Bot):
         await create_tables()
     
         guild = discord.Object(id=GUILD_ID)
+
+        # limpa comandos antigos do guild
+        self.tree.clear_commands(guild=guild)
     
         await self.tree.sync(guild=guild)
     
@@ -247,5 +250,6 @@ async def perfil(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
 
