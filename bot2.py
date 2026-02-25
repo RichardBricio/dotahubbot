@@ -103,38 +103,14 @@ class MedalSelect(discord.ui.Select):
         self.dota_nick = dota_nick
 
         options = [
-            discord.SelectOption(
-                label="Herald",
-                emoji="<:herald:1476240174634631418>"
-            ),
-            discord.SelectOption(
-                label="Guardian",
-                emoji="<:guardian:1476240153243553966>"
-            ),
-            discord.SelectOption(
-                label="Crusader",
-                emoji="<:crusader:1476239755015618560>"
-            ),
-            discord.SelectOption(
-                label="Archon",
-                emoji="<:archon:1476239723029725276>"
-            ),
-            discord.SelectOption(
-                label="Legend",
-                emoji="<:legend:1476240219853553745>"
-            ),
-            discord.SelectOption(
-                label="Ancient",
-                emoji="<:ancient:1476239613117862064>"
-            ),
-            discord.SelectOption(
-                label="Divine",
-                emoji="<:divine:1476240241936568561>"
-            ),
-            discord.SelectOption(
-                label="Immortal",
-                emoji="<:immortal:1476240204842143787>"
-            ),
+            discord.SelectOption(label="Herald", emoji="<:herald:1476240174634631418>"),
+            discord.SelectOption(label="Guardian", emoji="<:guardian:1476240153243553966>"),
+            discord.SelectOption(label="Crusader", emoji="<:crusader:1476239755015618560>"),
+            discord.SelectOption(label="Archon", emoji="<:archon:1476239723029725276>"),
+            discord.SelectOption(label="Legend", emoji="<:legend:1476240219853553745>"),
+            discord.SelectOption(label="Ancient", emoji="<:ancient:1476239613117862064>"),
+            discord.SelectOption(label="Divine", emoji="<:divine:1476240241936568561>"),
+            discord.SelectOption(label="Immortal", emoji="<:immortal:1476240204842143787>"),
         ]
 
         super().__init__(
@@ -152,7 +128,7 @@ class MedalSelect(discord.ui.Select):
         async with pool.acquire() as conn:
             await conn.execute("""
                 INSERT INTO players (user_id, discord_name, dota_nick, medal, mmr, points)
-                VALUES ($1, $2, $3, $4, $5)
+                VALUES ($1, $2, $3, $4, $5, 0)
                 ON CONFLICT (user_id)
                 DO UPDATE SET
                     discord_name = EXCLUDED.discord_name;
@@ -274,6 +250,7 @@ async def perfil(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
 
 
