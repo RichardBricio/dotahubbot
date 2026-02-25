@@ -31,22 +31,22 @@ MEDAL_MMR = {
 class DotaHubBot(commands.Bot):
 
     async def setup_hook(self):
-    global pool
-    pool = await asyncpg.create_pool(DATABASE_URL)
+        global pool
+        pool = await asyncpg.create_pool(DATABASE_URL)
 
-    await create_tables()
+        await create_tables()
 
-    guild = discord.Object(id=GUILD_ID)
+        guild = discord.Object(id=GUILD_ID)
 
-    # limpa tudo
-    self.tree.clear_commands(guild=None)
-    self.tree.clear_commands(guild=guild)
+        # limpa tudo
+        self.tree.clear_commands(guild=None)
+        self.tree.clear_commands(guild=guild)
 
-    # força sincronização limpa
-    await self.tree.sync()
-    await self.tree.sync(guild=guild)
+        # força sincronização limpa
+        await self.tree.sync()
+        await self.tree.sync(guild=guild)
 
-    print("Comandos resetados e sincronizados 100%.")
+        print("Comandos resetados e sincronizados 100%.")
 
 bot = DotaHubBot(command_prefix="!", intents=intents)
 
@@ -249,6 +249,7 @@ async def perfil(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
 
 
