@@ -38,9 +38,16 @@ class DotaHubBot(commands.Bot):
     
         guild = discord.Object(id=GUILD_ID)
     
+        # limpa comandos globais
+        self.tree.clear_commands(guild=None)
+    
+        # limpa comandos do servidor
+        self.tree.clear_commands(guild=guild)
+    
+        # sincroniza apenas no servidor
         await self.tree.sync(guild=guild)
     
-        print("Slash commands sincronizados corretamente.")
+        print("Comandos resetados e sincronizados corretamente.")
 
 bot = DotaHubBot(command_prefix="!", intents=intents)
 
@@ -91,19 +98,45 @@ class CadastroModal(discord.ui.Modal, title="Cadastro DotaHub"):
 # =========================
 class MedalSelect(discord.ui.Select):
 
+    class MedalSelect(discord.ui.Select):
+
     def __init__(self, dota_nick):
 
         self.dota_nick = dota_nick
 
         options = [
-            discord.SelectOption(label="Herald"),
-            discord.SelectOption(label="Guardian"),
-            discord.SelectOption(label="Crusader"),
-            discord.SelectOption(label="Archon"),
-            discord.SelectOption(label="Legend"),
-            discord.SelectOption(label="Ancient"),
-            discord.SelectOption(label="Divine"),
-            discord.SelectOption(label="Immortal"),
+            discord.SelectOption(
+                label="Herald",
+                emoji="<:herald:1476240174634631418>"
+            ),
+            discord.SelectOption(
+                label="Guardian",
+                emoji="<:guardian:1476240153243553966>"
+            ),
+            discord.SelectOption(
+                label="Crusader",
+                emoji="<:crusader:1476239755015618560>"
+            ),
+            discord.SelectOption(
+                label="Archon",
+                emoji="<:archon:1476239723029725276>"
+            ),
+            discord.SelectOption(
+                label="Legend",
+                emoji="<:legend:1476240219853553745>"
+            ),
+            discord.SelectOption(
+                label="Ancient",
+                emoji="<:ancient:1476239613117862064>"
+            ),
+            discord.SelectOption(
+                label="Divine",
+                emoji="<:divine:1476240241936568561>"
+            ),
+            discord.SelectOption(
+                label="Immortal",
+                emoji="<:immortal:1476240204842143787>"
+            ),
         ]
 
         super().__init__(
@@ -243,6 +276,7 @@ async def perfil(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
 
 
