@@ -8,10 +8,6 @@ TOKEN = os.getenv("TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 GUILD_ID = int(os.getenv("GUILD_ID"))
 
-print("TOKEN:", TOKEN)
-print("DATABASE_URL:", DATABASE_URL)
-print("GUILD_ID:", GUILD_ID)
-
 intents = discord.Intents.default()
 pool = None
 
@@ -19,14 +15,26 @@ pool = None
 # MMR BASE POR MEDALHA
 # =========================
 MEDAL_MMR = {
-    "Herald": 500,
-    "Guardian": 770,
-    "Crusader": 1540,
-    "Archon": 2310,
-    "Legend": 3080,
-    "Ancient": 3850,
-    "Divine": 4620,
-    "Immortal": 5630
+    "herald": 500,
+    "guardian": 770,
+    "crusader": 1540,
+    "archon": 2310,
+    "legend": 3080,
+    "ancient": 3850,
+    "divine": 4620,
+    "immortal": 5630
+}
+
+# Emoji para ilustrar
+MEDAL_EMOJI = {
+    "herald": "🟤",
+    "guardian": "🟢",
+    "crusader": "🔵",
+    "archon": "🟣",
+    "legend": "🟡",
+    "ancient": "🔶",
+    "divine": "💎",
+    "immortal": "🔥"
 }
 
 # =========================
@@ -37,19 +45,18 @@ class DotaHubBot(commands.Bot):
     async def setup_hook(self):
         global pool
         pool = await asyncpg.create_pool(DATABASE_URL)
-    
+
         await create_tables()
-    
+
         guild = discord.Object(id=GUILD_ID)
-    
-        await self.tree.sync(guild=guild)
-    
-        print("Slash commands sincronizados corretamente.")
+
+        synced = await self.tree.sync(guild=guild)
+        print(f"{len(synced)} comandos sincronizados.")
 
 bot = DotaHubBot(command_prefix="!", intents=intents)
 
 # =========================
-# DATABASE SETUP
+# DATABASE
 # =========================
 async def create_tables():
     async with pool.acquire() as conn:
@@ -59,7 +66,7 @@ async def create_tables():
                 discord_name TEXT,
                 dota_nick TEXT,
                 medal TEXT,
-                mmr INTEGER DEFAULT 1000,
+                mmr INTEGER,
                 wins INTEGER DEFAULT 0,
                 losses INTEGER DEFAULT 0,
                 points INTEGER DEFAULT 0
@@ -71,81 +78,55 @@ async def create_tables():
 # =========================
 class CadastroModal(discord.ui.Modal, title="Cadastro DotaHub"):
 
-    def __init__(self):
-        super().__init__()
+    dota_nick = discord.ui.TextInput(
+        label="Seu Nick no Dota",
+        required=True,
+        max_length=30
+    )
 
-        self.dota_nick = discord.ui.TextInput(
-            label="Seu nickname no Dota",
-            placeholder="Ex: HC GOD",
-            required=True
-        )
-
-        self.add_item(self.dota_nick)
+    medal = discord.ui.TextInput(
+        label="Sua Medalha",
+        placeholder="Herald, Guardian, Crusader...",
+        required=True,
+        max_length=20
+    )
 
     async def on_submit(self, interaction: discord.Interaction):
-        # abre dropdown de medalha após nickname
-        await interaction.response.send_message(
-            "Selecione sua medalha:",
-            view=MedalSelectView(self.dota_nick.value),
-            ephemeral=True
-        )
 
-# =========================
-# SELECT MEDALHA
-# =========================
-class MedalSelect(discord.ui.Select):
+        medal_input = self.medal.value.lower().strip()
 
-    def __init__(self, dota_nick):
+        if medal_input not in MEDAL_MMR:
+            await interaction.response.send_message(
+                "Medalha inválida. Use: Herald, Guardian, Crusader, Archon, Legend, Ancient, Divine ou Immortal.",
+                ephemeral=True
+            )
+            return
 
-        self.dota_nick = dota_nick
-
-        options = [
-            discord.SelectOption(label="Herald"),
-            discord.SelectOption(label="Guardian"),
-            discord.SelectOption(label="Crusader"),
-            discord.SelectOption(label="Archon"),
-            discord.SelectOption(label="Legend"),
-            discord.SelectOption(label="Ancient"),
-            discord.SelectOption(label="Divine"),
-            discord.SelectOption(label="Immortal"),
-        ]
-
-        super().__init__(
-            placeholder="Escolha sua medalha",
-            min_values=1,
-            max_values=1,
-            options=options
-        )
-
-    async def callback(self, interaction: discord.Interaction):
-
-        medal = self.values[0]
-        mmr = MEDAL_MMR[medal]
+        mmr = MEDAL_MMR[medal_input]
+        emoji = MEDAL_EMOJI[medal_input]
 
         async with pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO players (user_id, discord_name, dota_nick, medal, mmr)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO players (user_id, discord_name, dota_nick, medal, mmr, points)
+                VALUES ($1, $2, $3, $4, $5, 0)
                 ON CONFLICT (user_id)
                 DO UPDATE SET
-                    discord_name = EXCLUDED.discord_name;
+                    discord_name = EXCLUDED.discord_name,
+                    dota_nick = EXCLUDED.dota_nick,
+                    medal = EXCLUDED.medal,
+                    mmr = EXCLUDED.mmr;
             """,
                 interaction.user.id,
                 interaction.user.display_name,
-                self.dota_nick,
-                medal,
+                self.dota_nick.value,
+                medal_input.capitalize(),
                 mmr
             )
 
         await interaction.response.send_message(
-            f"Cadastro concluído como **{medal}** ({mmr} MMR).",
+            f"Cadastro concluído {emoji}\nMedalha: {medal_input.capitalize()} ({mmr} MMR)",
             ephemeral=True
         )
-
-class MedalSelectView(discord.ui.View):
-    def __init__(self, dota_nick):
-        super().__init__(timeout=60)
-        self.add_item(MedalSelect(dota_nick))
 
 # =========================
 # FILA VIEW
@@ -171,7 +152,7 @@ class FilaView(discord.ui.View):
         )
 
 # =========================
-# SLASH COMMANDS
+# COMANDOS
 # =========================
 @bot.tree.command(name="fila", description="Abrir painel da fila")
 @app_commands.guilds(discord.Object(id=GUILD_ID))
@@ -179,7 +160,7 @@ async def fila(interaction: discord.Interaction):
 
     embed = discord.Embed(
         title="DotaHub Ranked Queue",
-        description="Clique no botão abaixo para entrar na fila.",
+        description="Clique para entrar na fila.",
         color=discord.Color.red()
     )
 
@@ -199,7 +180,7 @@ async def ranking(interaction: discord.Interaction):
         """)
 
     if not rows:
-        await interaction.response.send_message("Nenhum jogador cadastrado ainda.")
+        await interaction.response.send_message("Nenhum jogador cadastrado.")
         return
 
     msg = ""
@@ -247,7 +228,3 @@ async def perfil(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
-
-
-
-
