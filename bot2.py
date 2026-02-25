@@ -50,8 +50,8 @@ class DotaHubBot(commands.Bot):
         await create_tables()
 
         guild = discord.Object(id=GUILD_ID)
-        #await self.tree.sync()
-        self.tree.clear_commands(guild=guild)
+        await self.tree.sync()
+        #self.tree.clear_commands(guild=guild)
         await self.tree.sync(guild=guild)
 
         print("Bot sincronizado com sucesso.")
@@ -466,6 +466,7 @@ async def fila(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
 
 
