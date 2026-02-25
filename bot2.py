@@ -21,7 +21,7 @@ queue_started_at = None
 # CONFIG FILA
 # =========================
 QUEUE_SIZE = 2        # ALTERE PARA 10 EM PRODUÇÃO
-QUEUE_TIMEOUT = 300   # 5 minutos
+QUEUE_TIMEOUT = 20   # 5 minutos
 
 # =========================
 # MMR BASE POR MEDALHA
@@ -318,3 +318,4 @@ async def fila(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
