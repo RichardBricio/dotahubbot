@@ -8,6 +8,10 @@ TOKEN = os.getenv("TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 GUILD_ID = int(os.getenv("GUILD_ID"))
 
+print("TOKEN:", TOKEN)
+print("DATABASE_URL:", DATABASE_URL)
+print("GUILD_ID:", GUILD_ID)
+
 intents = discord.Intents.default()
 pool = None
 
@@ -32,18 +36,14 @@ class DotaHubBot(commands.Bot):
 
     async def setup_hook(self):
         global pool
+    
         pool = await asyncpg.create_pool(DATABASE_URL)
-
         await create_tables()
-
-        guild = discord.Object(id=GUILD_ID)
-
-        # limpa comandos antigos do guild
-        self.tree.clear_commands(guild=guild)
-
-        await self.tree.sync(guild=guild)
-
-        print("Slash commands sincronizados.")
+    
+        # Sync GLOBAL
+        await self.tree.sync()
+    
+        print("Slash commands sincronizados globalmente.")
 
 bot = DotaHubBot(command_prefix="!", intents=intents)
 
@@ -173,7 +173,7 @@ class FilaView(discord.ui.View):
 # SLASH COMMANDS
 # =========================
 @bot.tree.command(name="fila", description="Abrir painel da fila")
-@app_commands.guilds(discord.Object(id=GUILD_ID))
+#@app_commands.guilds(discord.Object(id=GUILD_ID))
 async def fila(interaction: discord.Interaction):
 
     embed = discord.Embed(
@@ -246,3 +246,4 @@ async def perfil(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
