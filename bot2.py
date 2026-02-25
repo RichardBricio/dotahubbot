@@ -161,6 +161,9 @@ class FilaView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
+    # =========================
+    # BOTÃO ENTRAR
+    # =========================
     @discord.ui.button(label="Entrar na Fila", style=discord.ButtonStyle.green)
     async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
 
@@ -168,7 +171,6 @@ class FilaView(discord.ui.View):
 
         async with pool.acquire() as conn:
 
-            # Verifica se está cadastrado
             player = await conn.fetchrow(
                 "SELECT * FROM players WHERE user_id = $1",
                 interaction.user.id
@@ -178,12 +180,11 @@ class FilaView(discord.ui.View):
                 await interaction.response.send_modal(CadastroModal())
                 return
 
-            # Tenta inserir na fila
             try:
-                await conn.execute("""
-                    INSERT INTO queue (user_id)
-                    VALUES ($1)
-                """, interaction.user.id)
+                await conn.execute(
+                    "INSERT INTO queue (user_id) VALUES ($1)",
+                    interaction.user.id
+                )
             except asyncpg.UniqueViolationError:
                 await interaction.response.send_message(
                     "Você já está na fila.",
@@ -191,7 +192,6 @@ class FilaView(discord.ui.View):
                 )
                 return
 
-            # Busca todos da fila
             rows = await conn.fetch("""
                 SELECT p.discord_name
                 FROM queue q
@@ -201,23 +201,20 @@ class FilaView(discord.ui.View):
 
         count = len(rows)
 
-        # Se for o primeiro jogador, inicia contador
         if count == 1:
             queue_started_at = discord.utils.utcnow()
             queue_task = bot.loop.create_task(
                 queue_timeout_task(interaction.channel)
             )
 
-        # Monta lista de jogadores
         nick_list = "\n".join(f"• {r['discord_name']}" for r in rows)
 
         content = (
             f"🔥 Fila rolando: {count}/{QUEUE_SIZE}\n"
-            f"⏳ Tempo restante: 5:00\n\n"
+            f"⏳ Tempo restante: {QUEUE_TIMEOUT // 60}:{QUEUE_TIMEOUT % 60:02d}\n\n"
             f"👥 Jogadores na fila:\n{nick_list}"
         )
 
-        # Cria ou atualiza mensagem principal
         if queue_message is None:
             queue_message = await interaction.channel.send(content)
         else:
@@ -228,7 +225,6 @@ class FilaView(discord.ui.View):
             ephemeral=True
         )
 
-        # Se atingiu o limite
         if count >= QUEUE_SIZE:
 
             if queue_task:
@@ -241,36 +237,42 @@ class FilaView(discord.ui.View):
 
             await start_match(interaction.channel)
 
-    discord.ui.button(label="Encerrar Fila", style=discord.ButtonStyle.red)
-        async def encerrar(self, interaction: discord.Interaction, button: discord.ui.Button):
-    
-            global queue_message, queue_task
-    
-            async with pool.acquire() as conn:
-                count = await conn.fetchval("SELECT COUNT(*) FROM queue")
-    
-                if count == 0:
-                    await interaction.response.send_message(
-                        "Não há fila ativa.",
-                        ephemeral=True
-                    )
-                    return
-    
-                await conn.execute("DELETE FROM queue")
-    
-            if queue_task:
-                queue_task.cancel()
-    
-            if queue_message:
-                await queue_message.edit(
-                    content="🛑 Fila encerrada manualmente."
+    # =========================
+    # BOTÃO ENCERRAR
+    # =========================
+    @discord.ui.button(label="Encerrar Fila", style=discord.ButtonStyle.red)
+    async def encerrar(self, interaction: discord.Interaction, button: discord.ui.Button):
+
+        global queue_message, queue_task, queue_started_at
+
+        async with pool.acquire() as conn:
+            count = await conn.fetchval("SELECT COUNT(*) FROM queue")
+
+            if count == 0:
+                await interaction.response.send_message(
+                    "Não há fila ativa.",
+                    ephemeral=True
                 )
-                queue_message = None
-    
-            await interaction.response.send_message(
-                "Fila encerrada com sucesso.",
-                ephemeral=True
+                return
+
+            await conn.execute("DELETE FROM queue")
+
+        if queue_task:
+            queue_task.cancel()
+            queue_task = None
+
+        if queue_message:
+            await queue_message.edit(
+                content="🛑 Fila encerrada manualmente."
             )
+            queue_message = None
+
+        queue_started_at = None
+
+        await interaction.response.send_message(
+            "Fila encerrada com sucesso.",
+            ephemeral=True
+        )
 
 async def add_player_to_queue(interaction):
 
@@ -464,6 +466,7 @@ async def fila(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
 
 
