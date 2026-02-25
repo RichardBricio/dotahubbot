@@ -21,7 +21,7 @@ queue_started_at = None
 # CONFIG FILA
 # =========================
 QUEUE_SIZE = 2        # ALTERE PARA 10 EM PRODUÇÃO
-QUEUE_TIMEOUT = 20   # 5 minutos
+QUEUE_TIMEOUT = 300   # 5 minutos
 
 # =========================
 # MMR BASE POR MEDALHA
@@ -223,25 +223,44 @@ async def update_queue_message(channel, count):
 
 async def queue_timeout_task(channel):
 
-    global queue_message
+    global queue_message, queue_started_at
 
     try:
-        await asyncio.sleep(QUEUE_TIMEOUT)
-    except asyncio.CancelledError:
-        return
+        while True:
 
-    async with pool.acquire() as conn:
-        count = await conn.fetchval("SELECT COUNT(*) FROM queue")
+            async with pool.acquire() as conn:
+                count = await conn.fetchval("SELECT COUNT(*) FROM queue")
 
-        if count < QUEUE_SIZE:
-            await conn.execute("DELETE FROM queue")
+            if count >= QUEUE_SIZE:
+                return
+
+            elapsed = (discord.utils.utcnow() - queue_started_at).total_seconds()
+            time_left = max(0, QUEUE_TIMEOUT - int(elapsed))
+
+            if time_left <= 0:
+                async with pool.acquire() as conn:
+                    await conn.execute("DELETE FROM queue")
+
+                if queue_message:
+                    await queue_message.edit(
+                        content="❌ Fila cancelada. Tempo esgotado."
+                    )
+
+                queue_message = None
+                return
+
+            minutes = time_left // 60
+            seconds = time_left % 60
+
+            content = f"🔥 Fila rolando: {count}/{QUEUE_SIZE}\n⏳ Tempo restante: {minutes}:{seconds:02d}"
 
             if queue_message:
-                await queue_message.edit(
-                    content="❌ Fila cancelada. Tempo esgotado."
-                )
+                await queue_message.edit(content=content)
 
-            queue_message = None
+            await asyncio.sleep(1)
+
+    except asyncio.CancelledError:
+        return
 
 # =========================
 # MATCHMAKING
@@ -265,7 +284,7 @@ async def start_match(channel):
     team_a = []
     team_b = []
 
-    # Snake draft balanceado
+    # Snake Draft real (1-2-2-2-2-1)
     for i, player in enumerate(players):
         if (i // 2) % 2 == 0:
             team_a.append(player)
@@ -275,8 +294,11 @@ async def start_match(channel):
     avg_a = sum(p["mmr"] for p in team_a) // len(team_a)
     avg_b = sum(p["mmr"] for p in team_b) // len(team_b)
 
+    diff = abs(avg_a - avg_b)
+
     embed = discord.Embed(
         title="🔥 PARTIDA FORMADA 🔥",
+        description="Balanceamento por MMR (Snake Draft).",
         color=discord.Color.green()
     )
 
@@ -289,6 +311,12 @@ async def start_match(channel):
     embed.add_field(
         name=f"Dire (Média {avg_b})",
         value="\n".join(f"{p['discord_name']} ({p['mmr']})" for p in team_b),
+        inline=False
+    )
+
+    embed.add_field(
+        name="📊 Diferença de Média",
+        value=f"{diff} MMR",
         inline=False
     )
 
@@ -318,4 +346,5 @@ async def fila(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
