@@ -68,6 +68,13 @@ async def create_tables():
             );
         """)
 
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS queue (
+                user_id BIGINT PRIMARY KEY,
+                joined_at TIMESTAMP DEFAULT NOW()
+            );
+        """)
+
 # =========================
 # MODAL CADASTRO
 # =========================
@@ -156,21 +163,86 @@ class FilaView(discord.ui.View):
 
     @discord.ui.button(label="Entrar na Fila", style=discord.ButtonStyle.green)
     async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
-
+    
         async with pool.acquire() as conn:
+    
+            # verifica se está cadastrado
             player = await conn.fetchrow(
                 "SELECT * FROM players WHERE user_id = $1",
                 interaction.user.id
             )
-
-        if player is None:
-            await interaction.response.send_modal(CadastroModal())
-            return
-
-        await interaction.response.send_message(
-            "Você entrou na fila!",
-            ephemeral=True
+    
+            if player is None:
+                await interaction.response.send_modal(CadastroModal())
+                return
+    
+            # tenta inserir na fila
+            try:
+                await conn.execute("""
+                    INSERT INTO queue (user_id)
+                    VALUES ($1)
+                """, interaction.user.id)
+            except asyncpg.UniqueViolationError:
+                await interaction.response.send_message(
+                    "Você já está na fila.",
+                    ephemeral=True
+                )
+                return
+    
+            # conta quantos tem na fila
+            count = await conn.fetchval("SELECT COUNT(*) FROM queue")
+    
+            if count < 10:
+                await interaction.response.send_message(
+                    f"Você entrou na fila. ({count}/10)",
+                    ephemeral=True
+                )
+                return
+    
+            # se chegou aqui = 10 players
+            rows = await conn.fetch("""
+                SELECT p.user_id, p.discord_name, p.mmr
+                FROM queue q
+                JOIN players p ON p.user_id = q.user_id
+                ORDER BY p.mmr DESC
+            """)
+    
+            players = list(rows)
+    
+            # BALANCEAMENTO SNAKE DRAFT
+            team_a = []
+            team_b = []
+    
+            for i, player in enumerate(players):
+                if i % 4 in (0, 3):
+                    team_a.append(player)
+                else:
+                    team_b.append(player)
+    
+            avg_a = sum(p["mmr"] for p in team_a) // 5
+            avg_b = sum(p["mmr"] for p in team_b) // 5
+    
+            # limpa fila
+            await conn.execute("DELETE FROM queue")
+    
+        embed = discord.Embed(
+            title="🔥 PARTIDA FORMADA 🔥",
+            color=discord.Color.green()
         )
+    
+        embed.add_field(
+            name=f"Radiant (Média {avg_a})",
+            value="\n".join(f"{p['discord_name']} ({p['mmr']})" for p in team_a),
+            inline=False
+        )
+    
+        embed.add_field(
+            name=f"Dire (Média {avg_b})",
+            value="\n".join(f"{p['discord_name']} ({p['mmr']})" for p in team_b),
+            inline=False
+        )
+    
+        await interaction.response.send_message(embed=embed)
 
 # =========================
 # SLASH COMMANDS
@@ -249,6 +321,7 @@ async def perfil(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
 
 
