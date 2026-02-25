@@ -39,8 +39,8 @@ class DotaHubBot(commands.Bot):
         guild = discord.Object(id=GUILD_ID)
 
         # limpa tudo
-        self.tree.clear_commands(guild=None)
-        self.tree.clear_commands(guild=guild)
+        #self.tree.clear_commands(guild=None)
+        #self.tree.clear_commands(guild=guild)
 
         # força sincronização limpa
         await self.tree.sync()
@@ -249,6 +249,7 @@ async def perfil(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
 
 
