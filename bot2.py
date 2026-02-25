@@ -50,7 +50,8 @@ class DotaHubBot(commands.Bot):
         await create_tables()
 
         guild = discord.Object(id=GUILD_ID)
-        await self.tree.sync()
+        #await self.tree.sync()
+        self.tree.clear_commands(guild=guild)
         await self.tree.sync(guild=guild)
 
         print("Bot sincronizado com sucesso.")
@@ -157,6 +158,9 @@ class MedalSelectView(discord.ui.View):
 # =========================
 class FilaView(discord.ui.View):
 
+    def __init__(self):
+        super().__init__(timeout=None)
+
     @discord.ui.button(label="Entrar na Fila", style=discord.ButtonStyle.green)
     async def entrar(self, interaction: discord.Interaction, button: discord.ui.Button):
 
@@ -236,6 +240,37 @@ class FilaView(discord.ui.View):
                 )
 
             await start_match(interaction.channel)
+
+    discord.ui.button(label="Encerrar Fila", style=discord.ButtonStyle.red)
+        async def encerrar(self, interaction: discord.Interaction, button: discord.ui.Button):
+    
+            global queue_message, queue_task
+    
+            async with pool.acquire() as conn:
+                count = await conn.fetchval("SELECT COUNT(*) FROM queue")
+    
+                if count == 0:
+                    await interaction.response.send_message(
+                        "Não há fila ativa.",
+                        ephemeral=True
+                    )
+                    return
+    
+                await conn.execute("DELETE FROM queue")
+    
+            if queue_task:
+                queue_task.cancel()
+    
+            if queue_message:
+                await queue_message.edit(
+                    content="🛑 Fila encerrada manualmente."
+                )
+                queue_message = None
+    
+            await interaction.response.send_message(
+                "Fila encerrada com sucesso.",
+                ephemeral=True
+            )
 
 async def add_player_to_queue(interaction):
 
@@ -343,6 +378,8 @@ async def queue_timeout_task(channel):
 # =========================
 # MATCHMAKING
 # =========================
+import random
+
 async def start_match(channel):
     global queue_message
 
@@ -351,32 +388,39 @@ async def start_match(channel):
             SELECT p.user_id, p.discord_name, p.mmr
             FROM queue q
             JOIN players p ON p.user_id = q.user_id
-            ORDER BY p.mmr DESC
         """)
 
         await conn.execute("DELETE FROM queue")
 
     if not rows:
+        await channel.send("Erro: fila vazia.")
         return
 
     players = list(rows)
 
-    # ===== Balanceamento inteligente =====
+    # 🔥 embaralha primeiro
+    random.shuffle(players)
+
+    # ordena por mmr depois
+    players.sort(key=lambda x: x["mmr"], reverse=True)
+
     team_a = []
     team_b = []
 
+    # algoritmo guloso equilibrado
     for player in players:
-        if sum(p["mmr"] for p in team_a) <= sum(p["mmr"] for p in team_b):
+        sum_a = sum(p["mmr"] for p in team_a)
+        sum_b = sum(p["mmr"] for p in team_b)
+
+        if sum_a <= sum_b:
             team_a.append(player)
         else:
             team_b.append(player)
 
     avg_a = sum(p["mmr"] for p in team_a) // len(team_a)
     avg_b = sum(p["mmr"] for p in team_b) // len(team_b)
-
     diff = abs(avg_a - avg_b)
 
-    # ===== Embed final =====
     embed = discord.Embed(
         title="🔥 PARTIDA FORMADA 🔥",
         description=f"⚖️ Diferença média de MMR: {diff}",
@@ -385,23 +429,18 @@ async def start_match(channel):
 
     embed.add_field(
         name=f"🟢 Radiant (Média {avg_a})",
-        value="\n".join(
-            f"{p['discord_name']} ({p['mmr']})" for p in team_a
-        ),
+        value="\n".join(f"{p['discord_name']} ({p['mmr']})" for p in team_a),
         inline=False
     )
 
     embed.add_field(
         name=f"🔴 Dire (Média {avg_b})",
-        value="\n".join(
-            f"{p['discord_name']} ({p['mmr']})" for p in team_b
-        ),
+        value="\n".join(f"{p['discord_name']} ({p['mmr']})" for p in team_b),
         inline=False
     )
 
     await channel.send(embed=embed)
 
-    # Limpa mensagem da fila
     if queue_message:
         await queue_message.delete()
         queue_message = None
@@ -425,6 +464,7 @@ async def fila(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
 
 
