@@ -342,7 +342,6 @@ async def queue_timeout_task(channel):
 # MATCHMAKING
 # =========================
 async def start_match(channel):
-
     global queue_message
 
     async with pool.acquire() as conn:
@@ -356,55 +355,54 @@ async def start_match(channel):
         await conn.execute("DELETE FROM queue")
 
     if not rows:
-        await channel.send("Erro ao montar partida. Nenhum jogador encontrado.")
         return
 
     players = list(rows)
 
+    # ===== Balanceamento inteligente =====
     team_a = []
     team_b = []
 
-    # Snake Draft balanceado
-    for i, player in enumerate(players):
-        if (i // 2) % 2 == 0:
+    for player in players:
+        if sum(p["mmr"] for p in team_a) <= sum(p["mmr"] for p in team_b):
             team_a.append(player)
         else:
             team_b.append(player)
 
     avg_a = sum(p["mmr"] for p in team_a) // len(team_a)
     avg_b = sum(p["mmr"] for p in team_b) // len(team_b)
+
     diff = abs(avg_a - avg_b)
 
+    # ===== Embed final =====
     embed = discord.Embed(
         title="🔥 PARTIDA FORMADA 🔥",
-        description="Balanceamento automático por MMR (Snake Draft).",
+        description=f"⚖️ Diferença média de MMR: {diff}",
         color=discord.Color.green()
     )
 
     embed.add_field(
-        name=f"Radiant (Média {avg_a})",
-        value="\n".join(f"{p['discord_name']} ({p['mmr']})" for p in team_a),
+        name=f"🟢 Radiant (Média {avg_a})",
+        value="\n".join(
+            f"{p['discord_name']} ({p['mmr']})" for p in team_a
+        ),
         inline=False
     )
 
     embed.add_field(
-        name=f"Dire (Média {avg_b})",
-        value="\n".join(f"{p['discord_name']} ({p['mmr']})" for p in team_b),
-        inline=False
-    )
-
-    embed.add_field(
-        name="📊 Diferença de média",
-        value=f"{diff} MMR",
+        name=f"🔴 Dire (Média {avg_b})",
+        value="\n".join(
+            f"{p['discord_name']} ({p['mmr']})" for p in team_b
+        ),
         inline=False
     )
 
     await channel.send(embed=embed)
 
+    # Limpa mensagem da fila
     if queue_message:
         await queue_message.delete()
-
-    queue_message = None
+        queue_message = None
 
 # =========================
 # SLASH COMMAND
@@ -425,6 +423,7 @@ async def fila(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
 
 
