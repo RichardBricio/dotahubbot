@@ -36,14 +36,15 @@ class DotaHubBot(commands.Bot):
 
     async def setup_hook(self):
         global pool
-    
         pool = await asyncpg.create_pool(DATABASE_URL)
+    
         await create_tables()
     
-        # Sync GLOBAL
-        await self.tree.sync()
+        guild = discord.Object(id=GUILD_ID)
     
-        print("Slash commands sincronizados globalmente.")
+        await self.tree.sync(guild=guild)
+    
+        print("Slash commands sincronizados corretamente.")
 
 bot = DotaHubBot(command_prefix="!", intents=intents)
 
@@ -173,7 +174,7 @@ class FilaView(discord.ui.View):
 # SLASH COMMANDS
 # =========================
 @bot.tree.command(name="fila", description="Abrir painel da fila")
-#@app_commands.guilds(discord.Object(id=GUILD_ID))
+@app_commands.guilds(discord.Object(id=GUILD_ID))
 async def fila(interaction: discord.Interaction):
 
     embed = discord.Embed(
@@ -246,4 +247,5 @@ async def perfil(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
