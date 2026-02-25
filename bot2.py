@@ -120,7 +120,7 @@ class MedalSelect(discord.ui.Select):
 
         async with pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO players (user_id, discord_name, dota_nick, medal, mmr)
+                INSERT INTO players (user_id, discord_name, dota_nick, medal, mmr, points)
                 VALUES ($1, $2, $3, $4, $5)
                 ON CONFLICT (user_id)
                 DO UPDATE SET
@@ -243,6 +243,7 @@ async def perfil(interaction: discord.Interaction):
 # RUN
 # =========================
 bot.run(TOKEN)
+
 
 
 
