@@ -15,7 +15,7 @@ import xml.etree.ElementTree as ET
 TOKEN = os.getenv("TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 RANKING_CHANNEL_NAME = "dotahub_ranking"
-QUEUE_SIZE = 1 
+QUEUE_SIZE = 10 
 QUEUE_TIMEOUT = 300 
 
 MEDAL_MMR = {
@@ -606,5 +606,6 @@ async def ranking(it: discord.Interaction):
 @bot.tree.command(name="fila", description="Abrir painel da fila")
 async def cmd_fila(it):
     await it.response.send_message(embed=discord.Embed(title="DotaHub Queue"), view=FilaView())
+
 
 bot.run(TOKEN)
