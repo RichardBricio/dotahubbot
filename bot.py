@@ -575,14 +575,18 @@ async def perfil(it: discord.Interaction, usuario: discord.User = None):
     
     await it.response.send_message(embed=embed)
 
-@bot.tree.command(name="ranking", description="Mostra o Top 10 jogadores")
+@bot.tree.command(name="ranking", description="Mostra o ranking completo por pontos e winrate")
 async def ranking(it: discord.Interaction):
     async with pool.acquire() as conn:
+        # Ordenação: 1º Pontos, 2º Winrate (calculado), 3º Menos Derrotas (losses ASC)
         rows = await conn.fetch("""
-            SELECT discord_name, mmr, wins, losses 
+            SELECT discord_name, mmr, wins, losses, points,
+            CASE 
+                WHEN (wins + losses) > 0 THEN (CAST(wins AS FLOAT) / (wins + losses)) * 100 
+                ELSE 0 
+            END as winrate
             FROM players 
-            ORDER BY mmr DESC 
-            LIMIT 10
+            ORDER BY points DESC, winrate DESC, losses ASC
         """)
 
     if not rows:
@@ -590,16 +594,24 @@ async def ranking(it: discord.Interaction):
 
     description = ""
     for i, row in enumerate(rows, 1):
+        # Ícones para o pódio
         medalha = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"`{i}.`"
-        total = row['wins'] + row['losses']
-        description += f"{medalha} **{row['discord_name']}** - {row['mmr']} MMR ({row['wins']}W/{row['losses']}L)\n"
+        
+        # Dados da linha
+        pts = row['points']
+        wr = row['winrate']
+        w = row['wins']
+        l = row['losses']
+        
+        # Formatação: Medalha | Nome | Pontos | WR% | (W-L)
+        description += f"{medalha} **{row['discord_name']}** — `{pts} pts` | `{wr:.1f}% WR` ({w}W-{l}L)\n"
 
     embed = discord.Embed(
-        title="🏆 TOP 10 - DOTAHUB RANKING", 
+        title="🏆 DOTAHUB RANKING OFICIAL", 
         description=description, 
         color=discord.Color.gold()
     )
-    embed.set_footer(text="O ranking é atualizado após cada partida.")
+    embed.set_footer(text="Critérios: Pontos > Winrate > Menos Derrotas")
     
     await it.response.send_message(embed=embed)
 
@@ -609,3 +621,4 @@ async def cmd_fila(it):
 
 
 bot.run(TOKEN)
+
