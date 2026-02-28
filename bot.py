@@ -15,12 +15,18 @@ import xml.etree.ElementTree as ET
 TOKEN = os.getenv("TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 RANKING_CHANNEL_NAME = "dotahub_ranking"
-QUEUE_SIZE = 10 
+QUEUE_SIZE = 10
 QUEUE_TIMEOUT = 300 
 
 MEDAL_MMR = {
-    "Herald": 500, "Guardian": 770, "Crusader": 1540, "Archon": 2310,
-    "Legend": 3080, "Ancient": 3850, "Divine": 4620, "Immortal": 5630
+    "Herald": 500, 
+    "Guardian": 770, 
+    "Crusader": 1540, 
+    "Archon": 2310,
+    "Legend": 3080, 
+    "Ancient": 3850, 
+    "Divine": 4620, 
+    "Immortal": 5630
 }
 
 intents = discord.Intents.default()
@@ -85,9 +91,10 @@ async def atualizar_ranking_fixo(guild):
     """Gera um ranking visualmente rico e atualiza a mensagem fixa"""
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT discord_name, medal, mmr, wins, losses, points 
+            SELECT discord_name, medal, mmr, wins, losses, points,
+            CASE WHEN (wins + losses) > 0 THEN (CAST(wins AS FLOAT) / (wins + losses)) * 100 ELSE 0 END as winrate
             FROM players 
-            ORDER BY points DESC, mmr DESC 
+            ORDER BY points DESC, winrate DESC, losses ASC 
             LIMIT 20
         """)
 
@@ -139,6 +146,27 @@ class DotaHubBot(commands.Bot):
 bot = DotaHubBot(command_prefix="!", intents=intents)
 
 # =========================
+# COMANDO DE MANUTENÇÃO (DONO)
+# =========================
+@bot.command()
+@commands.is_owner() # Apenas o dono do bot (você) pode rodar
+async def sync_global(ctx):
+    """Limpa comandos locais e sincroniza globalmente"""
+    msg = await ctx.send("⏳ Iniciando faxina nos comandos...")
+    
+    try:
+        # 1. Limpa os comandos registrados especificamente NESTE servidor
+        bot.tree.clear_commands(guild=ctx.guild)
+        await bot.tree.sync(guild=ctx.guild)
+        
+        # 2. Sincroniza os comandos Globais
+        await bot.tree.sync()
+        
+        await msg.edit(content="✅ **Faxina concluída!**\n- Comandos da guilda removidos.\n- Comandos globais sincronizados.\n*(Pode levar alguns minutos para o Discord atualizar o cache global)*")
+    except Exception as e:
+        await msg.edit(content=f"❌ Erro ao sincronizar: {e}")
+
+# =========================
 # VIEW 4: RESULTADOS E PONTUAÇÃO
 # =========================
 class ResultadoView(discord.ui.View):
@@ -174,34 +202,47 @@ class ResultadoView(discord.ui.View):
         await interaction.message.edit(view=self)
 
     async def limpar_canais_voz(self, guild):
-        """Move os jogadores para a sala mais populosa ou para a primeira da categoria 'Dota 2'"""
-        # Identifica a categoria "Dota 2" (ajuste o nome se necessário)
-        categoria_dota = discord.utils.get(guild.categories, name="Dota 2")
+        """Move os jogadores para a sala ideal e deleta as temporárias"""
+        # BUSCA FLEXÍVEL: Procura categoria que contenha "Dota 2"
+        categoria_dota = next((cat for cat in guild.categories if "dota 2" in cat.name.lower()), None)
+        
+        # Se houver a categoria achada, usa os canais dela. Caso contrário, usa todos do server.
+        canais_busca = categoria_dota.voice_channels if categoria_dota else guild.voice_channels
         
         target_channel = None
-        canais_voz = categoria_dota.voice_channels if categoria_dota else guild.voice_channels
-        
-        if canais_voz:
-            # Encontra o canal com mais pessoas no momento (excluindo os canais de jogo)
-            canais_candidatos = [vc for vc in canais_voz if vc.name not in ["🟢 RADIANT", "🔴 DIRE"]]
+
+        if canais_busca:
+            # Filtra para não tentar mover as pessoas para os próprios canais que serão deletados
+            canais_candidatos = [vc for vc in canais_busca if vc.name not in ["🟢 RADIANT", "🔴 DIRE"]]
+            
             if canais_candidatos:
+                # Prioridade: Canal com mais pessoas (ex: "Geral" ou "Espera")
                 target_channel = max(canais_candidatos, key=lambda vc: len(vc.members))
                 
-                # Se a sala mais cheia estiver vazia, pegamos a primeira disponível da lista
+                # Se todos estiverem vazios, pega o primeiro da lista
                 if len(target_channel.members) == 0:
                     target_channel = canais_candidatos[0]
 
+        # 3. Processo de movimentação e deleção
         for name in ["🟢 RADIANT", "🔴 DIRE"]:
-            channel = discord.utils.get(guild.voice_channels, name=name)
+            # IMPORTANTE: Busca o canal especificamente dentro da categoria se ela existir
+            # Isso evita deletar canais com nomes iguais em outras categorias por erro
+            channel = discord.utils.get(guild.voice_channels, name=name, category=categoria_dota)
+            
             if channel:
                 if target_channel:
                     for member in channel.members:
                         try:
+                            # Move o jogador para o canal destino (na categoria Dota 2 ou Fallback)
                             await member.move_to(target_channel)
-                            await asyncio.sleep(0.3)
-                        except:
-                            pass
-                await channel.delete()
+                            await asyncio.sleep(0.2) # Pequeno delay para estabilidade da API
+                        except Exception as e:
+                            print(f"Erro ao mover {member.name}: {e}")
+                
+                try:
+                    await channel.delete()
+                except Exception as e:
+                    print(f"Erro ao deletar canal {name}: {e}")
 
     async def update_score(self, winners_ids, losers_ids):
         """Atualiza pontos e estatísticas no banco de dados"""
@@ -329,12 +370,17 @@ class PreMatchView(discord.ui.View):
             ids_radiant = [p['user_id'] for p in self.tA]
             ids_dire = [p['user_id'] for p in self.tB]
 
-            # ITEM 2: Criar salas de voz e mover jogadores
+            # ITEM 3: Localizar a categoria (Obrigatório "Dota 2" no seu, flexível em outros)
             guild = interaction.guild
-            category = interaction.channel.category
-            
-            rad_vc = await guild.create_voice_channel("🟢 RADIANT", category=category)
-            dire_vc = await guild.create_voice_channel("🔴 DIRE", category=category)
+            categoria_alvo = next((cat for cat in guild.categories if "dota 2" in cat.name.lower()), None)
+
+            # Se não achar a categoria "Dota 2", ele cria no mesmo lugar onde o comando foi dado
+            if not categoria_alvo:
+                categoria_alvo = interaction.channel.category
+
+            # Cria os canais usando a categoria encontrada ou a atual
+            rad_vc = await guild.create_voice_channel("🟢 RADIANT", category=categoria_alvo)
+            dire_vc = await guild.create_voice_channel("🔴 DIRE", category=categoria_alvo)
             
             for p_id in ids_radiant:
                 member = guild.get_member(p_id)
@@ -372,7 +418,7 @@ class PreMatchView(discord.ui.View):
                 if isinstance(item, discord.ui.Button):
                     item.disabled = False
                     item.label = "🚀 Tentar Novamente"
-            await interaction.message.edit(content=f"⚠️ Falha ao criar lobby: {error_msg}", view=self)
+            await interaction.message.edit(content="⚠️ Falha ao criar lobby. Verifique o console do Bot.", view=self)
 
 # =========================
 # MATCHMAKING LÓGICA
@@ -415,35 +461,6 @@ async def start_match(channel):
         try: await queue_message.delete()
         except: pass
         queue_message = None
-
-# async def start_match(channel):
-#     global queue_message
-#     async with pool.acquire() as conn:
-#         rows = await conn.fetch("""
-#             SELECT p.user_id, p.discord_name, p.mmr FROM queue q
-#             JOIN players p ON p.user_id = q.user_id WHERE q.guild_id = $1
-#         """, channel.guild.id)
-#         await conn.execute("DELETE FROM queue WHERE guild_id = $1", channel.guild.id)
-
-#     if len(rows) < QUEUE_SIZE: return
-#     players = sorted(list(rows), key=lambda x: x["mmr"], reverse=True)
-#     tA, tB = [], []
-#     for p in players:
-#         if sum(x["mmr"] for x in tA) <= sum(x["mmr"] for x in tB): tA.append(p)
-#         else: tB.append(p)
-
-#     pw = f"hub{random.randint(100,999)}"
-#     avg_a = int(sum(p['mmr'] for p in tA)/len(tA))
-#     avg_b = int(sum(p['mmr'] for p in tB)/len(tB))
-
-#     embed = discord.Embed(title="⚔️ CONFRONTO DEFINIDO ⚔️", color=discord.Color.gold())
-#     embed.add_field(name=f"🟢 RADIANT (AVG: {avg_a})", value="\n".join(f"• {p['discord_name']}" for p in tA))
-#     embed.add_field(name=f"🔴 DIRE (AVG: {avg_b})", value="\n".join(f"• {p['discord_name']}" for p in tB))
-    
-#     await channel.send(content="🔥 **Fila Cheia!**", embed=embed, view=PreMatchView(tA, tB, pw))
-#     if queue_message: 
-#         await queue_message.delete()
-#         queue_message = None
 
 # =========================
 # CADASTRO E FILA (PONTOS 1 E 2)
@@ -619,6 +636,4 @@ async def ranking(it: discord.Interaction):
 async def cmd_fila(it):
     await it.response.send_message(embed=discord.Embed(title="DotaHub Queue"), view=FilaView())
 
-
 bot.run(TOKEN)
-
