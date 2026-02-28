@@ -78,21 +78,22 @@ def on_lobby_new(lobby):
 
 @dota.on('lobby_changed')
 def on_lobby_changed(lobby):
-    # ITEM 1: Verificar se o jogo começou ou se está cheio
-    # Estado 3 significa que a partida iniciou (está carregando/em jogo)
-    if lobby.state == 3:
-        print("GAME_STARTED")
-        dota.leave_practice_lobby() # Bot sai e o admin passa para um jogador
-        gevent.spawn_later(5, sys.exit)
-
-    # Opcional: Se quiser que o Bot passe o admin antes de começar, 
-    # ele pode sair quando houver 10 jogadores humanos.
+    # Lista apenas os membros que não são o próprio bot
     humanos = [m for m in lobby.members if m.id != client.steam_id]
-    if len(humanos) >= 10:
-        print("LOBBY_FULL: Passing Admin...")
-        gevent.sleep(2)
+    
+    # Assim que entrar o primeiro jogador (ou mais), o bot sai
+    if len(humanos) >= 1:
+        print(f"PLAYER_JOINED: Passing Admin to {humanos[0].id}...")
+        gevent.sleep(1) # Pequeno delay para garantir estabilidade
         dota.leave_practice_lobby() 
-        gevent.spawn_later(5, sys.exit)
+        print("BOT_LEFT_SUCCESSFULLY")
+        gevent.spawn_later(2, sys.exit)
+
+    # Caso a partida inicie por algum motivo antes do bot sair
+    if lobby.state == 3:
+        print("GAME_STARTED_EARLY")
+        dota.leave_practice_lobby()
+        gevent.spawn_later(2, sys.exit)
 
 # --- EXECUÇÃO ---
 print("DEBUG: Tentando login direto...")
