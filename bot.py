@@ -726,5 +726,88 @@ async def fila(it: discord.Interaction):
     except Exception as e:
         print(f"❌ Erro ao enviar mensagem de fila: {e}")
 
+@bot.tree.command(name="perfil", description="Mostra suas estatísticas no DotaHub")
+async def perfil(it: discord.Interaction, usuario: discord.User = None):
+    target = usuario or it.user
+    season = bot.get_season() # Obtém a temporada atual do bot
+
+    async with bot.pool.acquire() as conn:
+        # Filtramos por user_id, guild_id e season_id
+        row = await conn.fetchrow("""
+            SELECT * FROM players 
+            WHERE user_id = $1 AND guild_id = $2 AND season_id = $3
+        """, target.id, it.guild.id, season)
+    
+    if not row:
+        return await it.response.send_message(
+            f"❌ {'Você' if target == it.user else target.display_name} ainda não tem cadastro nesta temporada.", 
+            ephemeral=True
+        )
+
+    # Cálculo de Winrate
+    total = row['wins'] + row['losses']
+    winrate = (row['wins'] / total * 100) if total > 0 else 0
+    
+    # Busca o emoji da medalha configurado no bot
+    emoji_medalha = discord.utils.get(bot.emojis, name=row['medal']) or "🏅"
+
+    embed = discord.Embed(title=f"📊 Perfil de {row['discord_name']}", color=discord.Color.blue())
+    embed.set_thumbnail(url=target.display_avatar.url)
+    embed.add_field(name="🏅 Medalha", value=f"{emoji_medalha} {row['medal']}", inline=True)
+    embed.add_field(name="⚔️ MMR", value=f"`{row['mmr']}`", inline=True)
+    embed.add_field(name="⭐ Pontos", value=f"`{row['points']}`", inline=True)
+    embed.add_field(name="🎮 Nick Dota", value=row['dota_nick'], inline=True)
+    embed.add_field(name="📈 Winrate", value=f"{winrate:.1f}% ({total} jogos)", inline=True)
+    embed.add_field(name="✅ W/L", value=f"`{row['wins']}V - {row['losses']}D`", inline=True)
+    
+    await it.response.send_message(embed=embed)
+
+@bot.tree.command(name="ranking", description="Mostra o ranking completo por pontos e winrate")
+async def ranking(it: discord.Interaction):
+    season = bot.get_season() # Garante que o ranking é da temporada atual
+    
+    async with bot.pool.acquire() as conn:
+        # Ordenação: 1º Pontos, 2º Winrate, 3º Menos Derrotas
+        rows = await conn.fetch("""
+            SELECT discord_name, medal, wins, losses, points,
+            CASE 
+                WHEN (wins + losses) > 0 THEN (CAST(wins AS FLOAT) / (wins + losses)) * 100 
+                ELSE 0 
+            END as winrate
+            FROM players 
+            WHERE guild_id = $1 AND season_id = $2
+            ORDER BY points DESC, winrate DESC, losses ASC
+            LIMIT 20
+        """, it.guild.id, season)
+
+    if not rows:
+        return await it.response.send_message("O ranking desta temporada está vazio por enquanto.", ephemeral=True)
+
+    description = ""
+    for i, row in enumerate(rows, 1):
+        # Ícones para o pódio
+        posicao = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"`{i:02d}.`"
+        
+        # Emoji da medalha do jogador
+        emoji_medal = discord.utils.get(bot.emojis, name=row['medal']) or "🏅"
+        
+        pts = row['points']
+        wr = row['winrate']
+        w = row['wins']
+        l = row['losses']
+        
+        # Formatação: Posição | Medalha | Nome | Pontos | Winrate
+        description += f"{posicao} {emoji_medal} **{row['discord_name']}** — `{pts} pts` | `{wr:.1f}% WR` ({w}V-{l}D)\n"
+
+    embed = discord.Embed(
+        title=f"🏆 RANKING OFICIAL - TEMPORADA {season}", 
+        description=description, 
+        color=discord.Color.gold()
+    )
+    embed.set_footer(text="Critérios: Pontos > Winrate > Menos Derrotas")
+    
+    await it.response.send_message(embed=embed)
+
 if __name__ == "__main__":
+
     bot.run(TOKEN)
